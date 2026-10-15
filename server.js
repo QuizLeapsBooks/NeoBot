@@ -12,16 +12,26 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
 
+// Build the set of allowed origins (always includes self)
+const buildAllowedOrigins = (envValue, selfUrl) => {
+  if (envValue === '*') return '*';
+  const list = envValue.split(',').map((o) => o.trim()).filter(Boolean);
+  // Always allow requests from our own Render URL (same-origin API calls)
+  if (selfUrl && !list.includes(selfUrl)) list.push(selfUrl);
+  return list;
+};
+
+// Render sets RENDER_EXTERNAL_URL automatically — use it to whitelist self
+const selfUrl = process.env.RENDER_EXTERNAL_URL || null;
+const resolvedOrigins = buildAllowedOrigins(allowedOrigin, selfUrl);
+
 // CORS configuration
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigin === '*') {
-      return callback(null, true);
-    }
-    const origins = allowedOrigin.split(',').map((o) => o.trim());
-    if (origins.includes(origin)) {
-      return callback(null, true);
-    }
+    // No origin = same-origin or non-browser request → allow
+    if (!origin) return callback(null, true);
+    if (resolvedOrigins === '*') return callback(null, true);
+    if (resolvedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error(`Origin ${origin} not allowed by CORS`));
   },
   methods: ['GET', 'POST', 'OPTIONS'],
