@@ -20,12 +20,37 @@ class NeoBotApp {
     this.geminiClient = null;
     this.wakeLock = null;
     this.state = 'idle'; // 'idle' | 'requesting' | 'connecting' | 'ready' | 'speaking' | 'error'
+    this._frontendPingTimer = null;
 
     this.initDOMElements();
     this.initManagers();
     this.bindEvents();
     this.updateUIState('idle', 'Robot Asleep - Tap Run');
+
+    // Start frontend keep-alive ping (prevents Render from sleeping when page is open)
+    this._startFrontendPing();
   }
+
+  /**
+   * Pings /health every 5 minutes while the page is open.
+   * Acts as a secondary keep-alive layer alongside UptimeRobot + server self-ping.
+   */
+  _startFrontendPing() {
+    const PING_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+    const backendUrl = CONFIG.getBackendUrl();
+
+    this._frontendPingTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`${backendUrl}/health`);
+        if (res.ok) {
+          console.debug('[NeoBot] Frontend keep-alive ping OK.');
+        }
+      } catch {
+        // Silently ignore — network may be unavailable
+      }
+    }, PING_INTERVAL_MS);
+  }
+
 
   initDOMElements() {
     this.runBtn = document.getElementById('run-btn');

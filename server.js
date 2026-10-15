@@ -53,7 +53,10 @@ app.use((req, res, next) => {
 // Serve frontend static assets (index.html, css/, js/) from root
 app.use(express.static('.'));
 
-// Health check endpoint (for Render health checks & frontend wake-up pings)
+// Ping counter — tracks keep-alive self-pings for monitoring
+let selfPingCount = 0;
+
+// Health check endpoint (for UptimeRobot, Render health checks & frontend wake-up pings)
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -67,7 +70,8 @@ app.get('/health', (req, res) => {
       process.env.GEMINI_API_KEY &&
       process.env.GEMINI_API_KEY.trim() !== '' &&
       process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here'
-    )
+    ),
+    selfPingCount  // shows how many keep-alive self-pings have fired
   });
 });
 
@@ -101,6 +105,39 @@ server.listen(PORT, () => {
   console.log(`📡 Local Web Interface: http://localhost:${PORT}`);
   console.log(`💓 Health check: http://localhost:${PORT}/health`);
   console.log(`🔐 Gemini Key Configured: ${Boolean(process.env.GEMINI_API_KEY)}`);
+
+  // ─── Self-Ping Keep-Alive (Render Free Tier) ──────────────────────────────
+  // Render free tier sleeps after 15 minutes of inactivity.
+  // This pings our own /health endpoint every 14 minutes to prevent that.
+  // Only runs in production (RENDER_EXTERNAL_URL is auto-set by Render).
+  // Pair with UptimeRobot (free) for reliable 24/7 uptime:
+  //   → Add HTTP monitor: https://your-app.onrender.com/health  (every 5 min)
+  // ─────────────────────────────────────────────────────────────────────────
+  const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
+  if (RENDER_URL) {
+    const PING_INTERVAL_MS = 14 * 60 * 1000; // 14 minutes
+    const pingUrl = `${RENDER_URL}/health`;
+    console.log(`🏓 Keep-alive self-ping enabled → ${pingUrl} (every 14 min)`);
+
+    const keepAliveTimer = setInterval(async () => {
+      try {
+        const res = await fetch(pingUrl, { signal: AbortSignal.timeout(10000) });
+        selfPingCount++;
+        if (res.ok) {
+          console.log(`🏓 [Keep-Alive] Self-ping #${selfPingCount} OK (uptime: ${Math.floor(process.uptime() / 60)}m)`);
+        } else {
+          console.warn(`⚠️ [Keep-Alive] Self-ping #${selfPingCount} returned HTTP ${res.status}`);
+        }
+      } catch (err) {
+        console.error(`❌ [Keep-Alive] Self-ping failed: ${err.message}`);
+      }
+    }, PING_INTERVAL_MS);
+
+    // Don't let this timer block graceful shutdown
+    keepAliveTimer.unref();
+  } else {
+    console.log('ℹ️  Keep-alive self-ping disabled (not running on Render).');
+  }
 });
 
 // Graceful shutdown
