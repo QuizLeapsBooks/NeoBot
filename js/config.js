@@ -11,12 +11,14 @@ export const CONFIG = {
     if (saved && saved.trim() !== '') {
       return saved.trim().replace(/\/+$/, '');
     }
-    // If running on localhost or 127.0.0.1, default to port 3000
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return DEFAULT_DEV_BACKEND;
+    // If running from Express server (localhost, 127.0.0.1, or local IP), use current origin
+    if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
+      if (!window.location.hostname.includes('github.io')) {
+        return window.location.origin;
+      }
     }
-    // For GitHub Pages, fallback to default Render URL or prompt user
-    return 'https://neobot-backend.onrender.com';
+    // For GitHub Pages, fallback to default Render URL or saved setting
+    return 'https://neobot-t7c2.onrender.com';
   },
 
   setBackendUrl(url) {
@@ -32,7 +34,7 @@ export const CONFIG = {
   CAMERA_QUALITY: 0.6,          // JPEG compression quality (0.0 to 1.0)
   CAMERA_MAX_WIDTH: 640,        // Scaled resolution for vision
   CAMERA_MAX_HEIGHT: 480,
-  
+
   AUDIO_INPUT_SAMPLE_RATE: 16000,   // Required by Gemini Live API (16kHz PCM)
   AUDIO_OUTPUT_SAMPLE_RATE: 24000,  // Gemini Live speech output rate (24kHz PCM)
   AUDIO_CHANNELS: 1                 // Mono audio

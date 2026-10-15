@@ -47,8 +47,10 @@ export class CameraManager {
       this.isRunning = true;
       this.startSnapshotLoop();
     } catch (err) {
+      console.warn('[CameraManager] Camera not accessible. Continuing in voice-only mode:', err.message);
+      this.isRunning = false;
       this.onError(err);
-      throw err;
+      // Do not throw, allowing the robot to function in audio-only mode
     }
   }
 

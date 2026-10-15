@@ -90,12 +90,21 @@ export function setupWebSocketProxy(server) {
     });
 
     geminiWs.on('close', (code, reason) => {
-      console.log(`[WS Proxy] Gemini disconnected (${code}: ${reason.toString() || 'no reason'})`);
+      const reasonStr = reason.toString() || 'Gemini disconnected';
+      console.log(`[WS Proxy] Gemini disconnected (${code}: ${reasonStr})`);
+      if (clientWs.readyState === WebSocket.OPEN) {
+        // Code must be valid WebSocket close code (1000-4999)
+        const closeCode = (code >= 1000 && code <= 4999) ? code : 1011;
+        clientWs.close(closeCode, reasonStr.slice(0, 120));
+      }
       cleanup();
     });
 
     geminiWs.on('error', (err) => {
       console.error('[WS Proxy] Gemini Live error:', err.message);
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.close(1011, err.message.slice(0, 120));
+      }
       cleanup();
     });
   });

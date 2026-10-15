@@ -95,12 +95,26 @@ class NeoBotApp {
       },
       onError: (err) => {
         console.error('[NeoBot] Gemini Live Error:', err.message);
+        this.handleStop(true);
         this.updateUIState('error', err.message || 'Connection Error');
-        this.handleStop();
       },
-      onClose: () => {
+      onClose: (event) => {
         if (this.state !== 'idle') {
-          this.handleStop();
+          let errorMsg = 'Disconnected';
+          const reasonStr = event?.reason ? event.reason.toString() : '';
+
+          if (event?.code === 1008 || reasonStr.includes('credentials') || reasonStr.includes('API key')) {
+            errorMsg = 'Invalid Gemini API Key in .env';
+          } else if (event?.code === 1011) {
+            errorMsg = 'Gemini Service Error (1011)';
+          } else if (event?.code === 1006) {
+            errorMsg = 'Connection Closed (Check Network/Key)';
+          } else if (reasonStr) {
+            errorMsg = `Disconnected: ${reasonStr.slice(0, 30)}`;
+          }
+
+          this.handleStop(true);
+          this.updateUIState('error', errorMsg);
         }
       }
     });
@@ -222,15 +236,15 @@ class NeoBotApp {
         errorMsg = err.message || 'Startup failed';
       }
 
+      this.handleStop(true);
       this.updateUIState('error', errorMsg);
-      this.handleStop();
     }
   }
 
   /**
    * Lifecycle Stop & Resource Cleanup
    */
-  handleStop() {
+  handleStop(preserveError = false) {
     // 1. Disconnect Gemini Live WebSocket
     if (this.geminiClient) {
       this.geminiClient.disconnect();
@@ -257,7 +271,10 @@ class NeoBotApp {
 
     this.runBtn.disabled = false;
     this.stopBtn.disabled = true;
-    this.updateUIState('idle', 'Robot Asleep - Tap Run');
+
+    if (!preserveError) {
+      this.updateUIState('idle', 'Robot Asleep - Tap Run');
+    }
   }
 
   /**

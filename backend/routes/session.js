@@ -58,12 +58,21 @@ sessionRouter.post('/session-token', async (req, res) => {
       });
     }
 
-    // If ephemeral token endpoint returned an error (e.g. method unavailable or permission issue)
+    // If ephemeral token endpoint returned an error
     console.warn('[Session] Ephemeral token creation was not accepted by Gemini API:', {
       status: googleResponse.status,
       errorStatus: data.error?.status,
       message: data.error?.message
     });
+
+    // If Google reports that the credentials/API key are fundamentally invalid
+    if (googleResponse.status === 401 || data.error?.status === 'UNAUTHENTICATED' || data.error?.reason === 'API_KEY_INVALID') {
+      return res.status(401).json({
+        ok: false,
+        error: 'Invalid Gemini API Key in .env. Please obtain a valid Gemini API key from https://aistudio.google.com/apikey (keys start with "AIzaSy...").',
+        details: data.error?.message
+      });
+    }
 
     // Provide seamless fallback to backend WebSocket relay proxy
     return res.status(200).json({
