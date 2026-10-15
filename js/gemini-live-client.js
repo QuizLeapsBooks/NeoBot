@@ -40,7 +40,13 @@ export class GeminiLiveClient {
         headers: { 'Content-Type': 'application/json' }
       });
 
-      sessionData = await response.json();
+      const rawText = await response.text();
+      try {
+        sessionData = JSON.parse(rawText);
+      } catch (parseErr) {
+        throw new Error(`Server at ${backendUrl} returned non-JSON response (${response.status}). Make sure Node.js server (node server.js) is running on port 3000.`);
+      }
+
       if (!response.ok || !sessionData.ok) {
         throw new Error(sessionData.error || `Failed to provision session (${response.status})`);
       }
@@ -115,7 +121,7 @@ export class GeminiLiveClient {
    * Sends the mandatory initial setup payload
    */
   sendSetupMessage(sessionData) {
-    const model = sessionData.model || 'gemini-2.5-flash';
+    const model = sessionData.model || 'gemini-3.8-live';
     const voice = sessionData.voice || 'Puck';
     const systemInstruction = sessionData.systemInstruction || 'You are NeoBot, a helpful AI science robot.';
 

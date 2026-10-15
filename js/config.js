@@ -11,14 +11,22 @@ export const CONFIG = {
     if (saved && saved.trim() !== '') {
       return saved.trim().replace(/\/+$/, '');
     }
-    // If running from Express server (localhost, 127.0.0.1, or local IP), use current origin
     if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
-      if (!window.location.hostname.includes('github.io')) {
-        return window.location.origin;
+      // If hosted on GitHub Pages, fallback to Render URL
+      if (window.location.hostname.includes('github.io')) {
+        return 'https://neobot-t7c2.onrender.com';
       }
+
+      // If opened on local server (Live Server port 5500, Vite port 5173, etc.),
+      // ensure we target the Node.js backend on port 3000
+      if (window.location.port !== '3000') {
+        return `http://${window.location.hostname}:3000`;
+      }
+
+      return window.location.origin;
     }
-    // For GitHub Pages, fallback to default Render URL or saved setting
-    return 'https://neobot-t7c2.onrender.com';
+
+    return DEFAULT_DEV_BACKEND;
   },
 
   setBackendUrl(url) {

@@ -10,8 +10,21 @@ export const sessionRouter = Router();
  * If ephemeral tokens are unsupported by the key/tier, gracefully indicates proxy mode.
  */
 sessionRouter.post('/session-token', async (req, res) => {
+  // Read API key from environment (must be set in .env or Render env vars)
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+  // Resolve model — normalise legacy/placeholder names to the current Live API model
+  const rawModel = process.env.GEMINI_MODEL || '';
+  const LIVE_MODEL = 'gemini-3.8-live';
+  const model = (
+    rawModel === '' ||
+    rawModel === 'gemini-2.5-flash' ||
+    rawModel === 'gemini-2.5-flash-native-audio-preview-12-2025' ||
+    rawModel === 'gemini-2.0-flash-live-001' ||
+    rawModel === 'gemini-2.0-flash-exp' ||
+    rawModel === 'gemini-2.0-flash'
+  ) ? LIVE_MODEL : rawModel;
+
   const voice = process.env.GEMINI_VOICE || 'Puck';
   const robotName = process.env.ROBOT_NAME || 'NeoBot';
   const systemInstruction = getRobotPersonality(robotName);
