@@ -63,7 +63,7 @@ app.get('/health', (req, res) => {
     service: 'neobot-backend',
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
-    model: process.env.GEMINI_MODEL || 'gemini-3.8-live',
+    model: (process.env.GEMINI_MODEL && process.env.GEMINI_MODEL.includes('live')) ? process.env.GEMINI_MODEL : 'gemini-3.8-live',
     voice: process.env.GEMINI_VOICE || 'Puck',
     robotName: process.env.ROBOT_NAME || 'NeoBot',
     hasApiKey: Boolean(

@@ -166,6 +166,34 @@ async function runFrontendTests() {
     'sendVideoFrame preserves JPEG payload bytes'
   );
 
+  // Test sendTurnComplete
+  client.sendTurnComplete();
+  assert(
+    sentPayload?.clientContent?.turnComplete === true,
+    'sendTurnComplete sends clientContent.turnComplete: true'
+  );
+
+  // Test sendInitialGreeting
+  client.sendInitialGreeting();
+  assert(
+    sentPayload?.clientContent?.turns?.[0]?.parts?.[0]?.text?.length > 0 && sentPayload?.clientContent?.turnComplete === true,
+    'sendInitialGreeting sends opening greeting turn with turnComplete: true'
+  );
+
+  // Test outputTranscription callback
+  let transcriptReceived = null;
+  let speakerReceived = null;
+  client.onTranscript = (text, speaker) => {
+    transcriptReceived = text;
+    speakerReceived = speaker;
+  };
+  client.handleIncomingMessage({
+    serverContent: {
+      outputTranscription: { text: 'Hello human!' }
+    }
+  });
+  assert(transcriptReceived === 'Hello human!' && speakerReceived === 'robot', 'outputTranscription triggers onTranscript with robot speaker');
+
   console.log(`\n========================================`);
   console.log(`🏁 Test Results: ${passed}/${total} passed`);
   console.log(`========================================\n`);

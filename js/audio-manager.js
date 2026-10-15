@@ -40,9 +40,9 @@ export class AudioManager {
   async ensureAudioContext() {
     if (!this.audioContext || this.audioContext.state === 'closed') {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      this.audioContext = new AudioCtx({
-        sampleRate: CONFIG.AUDIO_OUTPUT_SAMPLE_RATE // 24kHz preferred for playback
-      });
+      // Do not force sampleRate: 24000 on mobile devices - use device native rate (44.1k/48k)
+      // Web Audio API cleanly resamples 24kHz AudioBuffers on playback.
+      this.audioContext = new AudioCtx();
     }
 
     if (this.audioContext.state === 'suspended') {
@@ -83,13 +83,14 @@ export class AudioManager {
 
       const inputData = event.inputBuffer.getChannelData(0);
 
-      // Calculate RMS volume for audio visualizer
+      // Calculate RMS volume for audio visualizer & VAD
       let sum = 0;
       for (let i = 0; i < inputData.length; i++) {
         sum += inputData[i] * inputData[i];
       }
       const rms = Math.sqrt(sum / inputData.length);
-      this.onVolumeChange(Math.min(1.0, rms * 5)); // Scaled volume level 0..1
+      const scaledVol = Math.min(1.0, rms * 5);
+      this.onVolumeChange(scaledVol, rms); // Scaled volume level 0..1 and raw rms
 
       // Downsample to 16kHz if necessary
       const downsampled = downsampleBuffer(
@@ -103,16 +104,16 @@ export class AudioManager {
       const base64Chunk = arrayBufferToBase64(pcm16Buffer);
 
       if (onAudioChunk) {
-        onAudioChunk(base64Chunk);
+        onAudioChunk(base64Chunk, rms);
       }
     };
 
     // Connect nodes
     this.audioSourceNode.connect(this.processorNode);
-    // Connect to destination to prevent chrome garbage collecting the processor
-    // (ScriptProcessor requires output connection in some browsers)
+    // Connect to destination with negligible gain (0.0001) to prevent mobile Chrome
+    // garbage collecting or muting the ScriptProcessor
     const silentGain = this.audioContext.createGain();
-    silentGain.gain.value = 0;
+    silentGain.gain.value = 0.0001;
     this.processorNode.connect(silentGain);
     silentGain.connect(this.audioContext.destination);
 
@@ -169,9 +170,17 @@ export class AudioManager {
     source.buffer = audioBuffer;
     source.connect(this.audioContext.destination);
 
-    // Schedule seamlessly
+    // Ensure AudioContext is active (mobile can suspend between interactions)
+    if (this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
+
+    // Schedule seamlessly without gaps or overlapping jitter
     const currentTime = this.audioContext.currentTime;
-    const startTime = Math.max(currentTime, this.scheduledTime);
+    if (this.scheduledTime < currentTime) {
+      this.scheduledTime = currentTime + 0.03;
+    }
+    const startTime = this.scheduledTime;
     source.start(startTime);
     this.scheduledTime = startTime + audioBuffer.duration;
 

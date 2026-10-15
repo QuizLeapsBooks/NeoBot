@@ -64,6 +64,26 @@
       </div>
     </main>
 
+    <!-- Real-time Speech Subtitle & Live Status -->
+    <div id="transcript-container" class="transcript-container">
+      <div id="transcript-pill" class="transcript-pill hidden">
+        <span id="transcript-speaker" class="transcript-speaker robot-speaker">NeoBot:</span>
+        <span id="transcript-text" class="transcript-text"></span>
+      </div>
+      <div id="voice-indicator" class="voice-indicator hidden">
+        <span class="voice-dot"></span>
+        <span id="voice-indicator-text">Listening...</span>
+      </div>
+    </div>
+
+    <!-- Done Speaking Quick Trigger (ideal for loud exhibition halls) -->
+    <div class="action-bar-container">
+      <button id="done-speaking-btn" class="done-speaking-btn hidden" aria-label="Tap when done speaking">
+        <span class="btn-pulse-dot"></span>
+        <span>Tap When Done Speaking ➔</span>
+      </button>
+    </div>
+
     <!-- Controls -->
     <footer class="controls-container">
       <button id="run-btn" class="control-btn run-btn" aria-label="Run Robot">

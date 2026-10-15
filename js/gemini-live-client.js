@@ -191,6 +191,16 @@ export class GeminiLiveClient {
         this.onInterrupted();
       }
 
+      // Handle Output Transcription (what the robot is saying aloud)
+      if (message.serverContent.outputTranscription?.text) {
+        this.onTranscript(message.serverContent.outputTranscription.text, 'robot');
+      }
+
+      // Handle Input Transcription (what the user said)
+      if (message.serverContent.inputTranscription?.text) {
+        this.onTranscript(message.serverContent.inputTranscription.text, 'user');
+      }
+
       // Handle Model Voice Output
       if (modelTurn?.parts) {
         for (const part of modelTurn.parts) {
@@ -198,9 +208,9 @@ export class GeminiLiveClient {
           if (part.inlineData && part.inlineData.mimeType?.startsWith('audio/')) {
             this.onAudioChunk(part.inlineData.data);
           }
-          // Optional Text Transcript (for debugging / display)
+          // Fallback Text Transcript
           if (part.text) {
-            this.onTranscript(part.text);
+            this.onTranscript(part.text, 'robot');
           }
         }
       }
@@ -266,6 +276,49 @@ export class GeminiLiveClient {
     };
 
     this.ws.send(JSON.stringify(payload));
+  }
+
+  /**
+   * Tells Gemini that user has finished speaking their turn.
+   * Prompts Gemini to process the accumulated voice stream and speak its answer.
+   */
+  sendTurnComplete() {
+    if (!this.isConnected || !this.isSetupComplete || !this.ws) return;
+    console.log('[GeminiLiveClient] Signaling clientContent turnComplete: true');
+    const payload = {
+      clientContent: {
+        turnComplete: true
+      }
+    };
+    try {
+      this.ws.send(JSON.stringify(payload));
+    } catch (err) {
+      console.warn('[GeminiLiveClient] Error sending turnComplete:', err);
+    }
+  }
+
+  /**
+   * Triggers an initial greeting so the robot speaks aloud upon wake-up
+   */
+  sendInitialGreeting() {
+    if (!this.isConnected || !this.isSetupComplete || !this.ws) return;
+    console.log('[GeminiLiveClient] Triggering initial greeting...');
+    const payload = {
+      clientContent: {
+        turns: [
+          {
+            role: 'user',
+            parts: [{ text: 'A visitor has just walked up to you at the school science exhibition! Speak aloud and greet them warmly as NeoBot in 1 to 2 lively sentences.' }]
+          }
+        ],
+        turnComplete: true
+      }
+    };
+    try {
+      this.ws.send(JSON.stringify(payload));
+    } catch (err) {
+      console.warn('[GeminiLiveClient] Error sending initial greeting:', err);
+    }
   }
 
   /**

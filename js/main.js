@@ -1,11 +1,13 @@
 /**
  * NeoBot Main Application Controller (ES Module)
  * Orchestrates:
- * 1. UI State Management (Idle, Requesting, Connecting, Ready, Speaking, Error)
+ * 1. UI State Management (Idle, Requesting, Connecting, Ready, Thinking, Speaking, Error)
  * 2. Media Capture Lifecycle (Microphone & Camera)
  * 3. Gemini Multimodal Live Client Connection & Real-Time Streaming
- * 4. Screen WakeLock for Cardboard Robot Display
- * 5. Backend Health Testing & Settings Modal
+ * 4. Automatic Voice Activity Detection (VAD) & End-of-Speech Turn Completion
+ * 5. Real-Time Transcript Display & Exhibition Audio Feedback
+ * 6. Screen WakeLock for Cardboard Robot Display
+ * 7. Backend Health Testing & Settings Modal
  */
 
 import { CONFIG } from './config.js';
@@ -19,8 +21,14 @@ class NeoBotApp {
     this.cameraManager = null;
     this.geminiClient = null;
     this.wakeLock = null;
-    this.state = 'idle'; // 'idle' | 'requesting' | 'connecting' | 'ready' | 'speaking' | 'error'
+    this.state = 'idle'; // 'idle' | 'requesting' | 'connecting' | 'ready' | 'thinking' | 'speaking' | 'error'
     this._frontendPingTimer = null;
+
+    // VAD (Voice Activity Detection) State
+    this.userHasSpoken = false;
+    this.silenceTimer = null;
+    this.initialGreetingTriggered = false;
+    this._transcriptClearTimer = null;
 
     this.initDOMElements();
     this.initManagers();
@@ -51,7 +59,6 @@ class NeoBotApp {
     }, PING_INTERVAL_MS);
   }
 
-
   initDOMElements() {
     this.runBtn = document.getElementById('run-btn');
     this.stopBtn = document.getElementById('stop-btn');
@@ -61,6 +68,14 @@ class NeoBotApp {
     this.cameraVideo = document.getElementById('camera-video');
     this.camFlipBtn = document.getElementById('cam-flip-btn');
     this.waveBars = document.querySelectorAll('.wave-bar');
+
+    // Speech Transcript & Voice Status Elements
+    this.transcriptPill = document.getElementById('transcript-pill');
+    this.transcriptSpeaker = document.getElementById('transcript-speaker');
+    this.transcriptText = document.getElementById('transcript-text');
+    this.voiceIndicator = document.getElementById('voice-indicator');
+    this.voiceIndicatorText = document.getElementById('voice-indicator-text');
+    this.doneSpeakingBtn = document.getElementById('done-speaking-btn');
 
     // Settings elements
     this.settingsBtn = document.getElementById('settings-btn');
@@ -72,22 +87,28 @@ class NeoBotApp {
   }
 
   initManagers() {
-    // 1. Audio Manager with dynamic visualizer callbacks
+    // 1. Audio Manager with dynamic visualizer callbacks & RMS VAD
     this.audioManager = new AudioManager({
-      onVolumeChange: (vol) => {
-        if (this.state === 'ready') {
+      onVolumeChange: (vol, rms) => {
+        if (this.state === 'ready' || this.state === 'thinking') {
           // React mouth bars to user mic volume while listening
           this.waveBars.forEach((bar, idx) => {
             const h = Math.max(6, Math.min(32, vol * 28 + (idx % 2 === 0 ? 4 : 0)));
             bar.style.height = `${h}px`;
           });
+
+          // Intelligent Voice Activity Detection (VAD)
+          this.handleVoiceActivity(rms, vol);
         }
       },
       onSpeakingStateChange: (isSpeaking) => {
         if (isSpeaking && this.state !== 'speaking') {
           this.updateUIState('speaking', 'NeoBot Speaking...');
+          this.hideVoiceIndicator();
+          if (this.doneSpeakingBtn) this.doneSpeakingBtn.classList.add('hidden');
         } else if (!isSpeaking && this.state === 'speaking') {
           this.updateUIState('ready', 'Online - Listening & Watching');
+          this.hideVoiceIndicator();
         }
       }
     });
@@ -111,20 +132,33 @@ class NeoBotApp {
       onReady: () => {
         console.log('[NeoBot] Gemini session ready.');
         this.updateUIState('ready', 'Online - Listening & Watching');
+
+        // Automatically trigger initial greeting so robot speaks out loud upon startup
+        if (!this.initialGreetingTriggered) {
+          this.initialGreetingTriggered = true;
+          setTimeout(() => {
+            if (this.state === 'ready' && this.geminiClient && this.geminiClient.isConnected) {
+              console.log('[NeoBot] Triggering initial greeting...');
+              this.geminiClient.sendInitialGreeting();
+            }
+          }, 600);
+        }
       },
       onAudioChunk: (base64Pcm) => {
+        if (this.state === 'thinking') {
+          this.updateUIState('speaking', 'NeoBot Speaking...');
+          this.hideVoiceIndicator();
+        }
         this.audioManager.playAudioChunk(base64Pcm);
       },
-      onTranscript: (text) => {
-        // Log AI transcript to console for debugging
-        console.log('[NeoBot AI]', text);
+      onTranscript: (text, speaker = 'robot') => {
+        console.log(`[NeoBot ${speaker}]`, text);
+        this.displayTranscript(text, speaker);
       },
       onTurnComplete: () => {
-        // AI finished its turn - ensure we're in listening state
-        if (this.state === 'speaking') {
-          // AudioManager will handle state via onSpeakingStateChange when queue drains
-        }
         console.log('[NeoBot] AI turn complete - listening for next input.');
+        this.userHasSpoken = false;
+        if (this.doneSpeakingBtn) this.doneSpeakingBtn.classList.add('hidden');
       },
       onInterrupted: () => {
         this.audioManager.clearPlaybackQueue();
@@ -161,6 +195,14 @@ class NeoBotApp {
   bindEvents() {
     this.runBtn.addEventListener('click', () => this.handleRun());
     this.stopBtn.addEventListener('click', () => this.handleStop());
+
+    // Manual Done Speaking Button (ideal for loud science exhibition halls)
+    if (this.doneSpeakingBtn) {
+      this.doneSpeakingBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.finishUserTurn();
+      });
+    }
 
     this.camFlipBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -211,6 +253,101 @@ class NeoBotApp {
     window.addEventListener('beforeunload', () => {
       this.handleStop();
     });
+  }
+
+  /**
+   * Voice Activity Detection (VAD)
+   * Detects when user speaks, updates UI, and triggers turn completion after silence.
+   */
+  handleVoiceActivity(rms, vol) {
+    if (this.state === 'speaking') return;
+
+    // Thresholds for detecting speech
+    const SPEECH_RMS_THRESHOLD = 0.02;
+    const SILENCE_TIMEOUT_MS = 1000; // 1 second of silence triggers response
+
+    if (rms > SPEECH_RMS_THRESHOLD || vol > 0.14) {
+      this.userHasSpoken = true;
+
+      // Cancel silence timer while user is speaking
+      if (this.silenceTimer) {
+        clearTimeout(this.silenceTimer);
+        this.silenceTimer = null;
+      }
+
+      this.showVoiceIndicator('Hearing your voice... Keep speaking');
+      if (this.doneSpeakingBtn) {
+        this.doneSpeakingBtn.classList.remove('hidden');
+      }
+    } else if (this.userHasSpoken) {
+      // Silence detected after speech
+      if (!this.silenceTimer) {
+        this.silenceTimer = setTimeout(() => {
+          this.finishUserTurn();
+        }, SILENCE_TIMEOUT_MS);
+      }
+    }
+  }
+
+  /**
+   * Finalizes user speech turn and sends turnComplete to Gemini
+   */
+  finishUserTurn() {
+    if (!this.userHasSpoken && this.state !== 'ready') return;
+    this.userHasSpoken = false;
+
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+
+    if (this.doneSpeakingBtn) {
+      this.doneSpeakingBtn.classList.add('hidden');
+    }
+
+    this.updateUIState('thinking', 'NeoBot Thinking...');
+    this.showVoiceIndicator('NeoBot is thinking...');
+
+    if (this.geminiClient && this.geminiClient.isConnected) {
+      this.geminiClient.sendTurnComplete();
+    }
+  }
+
+  showVoiceIndicator(text) {
+    if (this.voiceIndicator && this.voiceIndicatorText) {
+      this.voiceIndicatorText.textContent = text;
+      this.voiceIndicator.classList.remove('hidden');
+    }
+  }
+
+  hideVoiceIndicator() {
+    if (this.voiceIndicator) {
+      this.voiceIndicator.classList.add('hidden');
+    }
+  }
+
+  displayTranscript(text, speaker = 'robot') {
+    if (!this.transcriptPill || !this.transcriptText || !this.transcriptSpeaker) return;
+
+    this.transcriptPill.classList.remove('hidden');
+    if (speaker === 'robot') {
+      this.transcriptSpeaker.textContent = 'NeoBot:';
+      this.transcriptSpeaker.className = 'transcript-speaker robot-speaker';
+    } else {
+      this.transcriptSpeaker.textContent = 'You:';
+      this.transcriptSpeaker.className = 'transcript-speaker user-speaker';
+    }
+
+    this.transcriptText.textContent = text;
+
+    if (this._transcriptClearTimer) {
+      clearTimeout(this._transcriptClearTimer);
+    }
+    this._transcriptClearTimer = setTimeout(() => {
+      if (this.state !== 'speaking' && this.state !== 'thinking') {
+        this.transcriptPill.classList.add('hidden');
+      }
+    }, 10000);
   }
 
   /**
@@ -283,6 +420,21 @@ class NeoBotApp {
    * Lifecycle Stop & Resource Cleanup
    */
   handleStop(preserveError = false) {
+    this.userHasSpoken = false;
+    this.initialGreetingTriggered = false;
+
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+    if (this._transcriptClearTimer) {
+      clearTimeout(this._transcriptClearTimer);
+      this._transcriptClearTimer = null;
+    }
+    if (this.doneSpeakingBtn) this.doneSpeakingBtn.classList.add('hidden');
+    this.hideVoiceIndicator();
+    if (this.transcriptPill) this.transcriptPill.classList.add('hidden');
+
     // 1. Disconnect Gemini Live WebSocket
     if (this.geminiClient) {
       this.geminiClient.disconnect();

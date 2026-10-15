@@ -77,7 +77,7 @@ Open `.env` and insert your Gemini API key:
 ```env
 PORT=3000
 GEMINI_API_KEY=AIzaSy...your_actual_key_here
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-live
 GEMINI_VOICE=Puck
 ROBOT_NAME=NeoBot
 ALLOWED_ORIGIN=*
@@ -120,7 +120,7 @@ All 37 automated tests will run and report status.
    * **Start Command:** `node server.js`
 5. Under **Environment Variables**, add:
    * `GEMINI_API_KEY`: *(your Google Gemini API key)*
-   * `GEMINI_MODEL`: `gemini-2.5-flash`
+   * `GEMINI_MODEL`: `gemini-3.8-live`
    * `GEMINI_VOICE`: `Puck`
    * `ROBOT_NAME`: `NeoBot`
    * `ALLOWED_ORIGIN`: `https://your-github-username.github.io`

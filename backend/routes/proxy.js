@@ -28,7 +28,8 @@ export function setupWebSocketProxy(server) {
       return;
     }
 
-    const model = (process.env.GEMINI_MODEL || 'gemini-3.8-live').trim();
+    const rawModel = (process.env.GEMINI_MODEL || '').trim();
+    const model = (!rawModel || rawModel === 'gemini-2.5-flash' || rawModel.includes('exp') || rawModel === 'gemini-2.0-flash') ? 'gemini-3.8-live' : rawModel;
     const geminiWsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
     console.log(`[WS Proxy] Client connected. Bridging to Gemini Live (model: ${model})...`);
