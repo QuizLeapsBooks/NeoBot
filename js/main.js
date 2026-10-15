@@ -90,6 +90,17 @@ class NeoBotApp {
       onAudioChunk: (base64Pcm) => {
         this.audioManager.playAudioChunk(base64Pcm);
       },
+      onTranscript: (text) => {
+        // Log AI transcript to console for debugging
+        console.log('[NeoBot AI]', text);
+      },
+      onTurnComplete: () => {
+        // AI finished its turn - ensure we're in listening state
+        if (this.state === 'speaking') {
+          // AudioManager will handle state via onSpeakingStateChange when queue drains
+        }
+        console.log('[NeoBot] AI turn complete - listening for next input.');
+      },
       onInterrupted: () => {
         this.audioManager.clearPlaybackQueue();
       },
@@ -106,11 +117,13 @@ class NeoBotApp {
           if (event?.code === 1008 || reasonStr.includes('credentials') || reasonStr.includes('API key')) {
             errorMsg = 'Invalid Gemini API Key in .env';
           } else if (event?.code === 1011) {
-            errorMsg = 'Gemini Service Error (1011)';
+            errorMsg = 'Gemini Service Error - try again';
           } else if (event?.code === 1006) {
-            errorMsg = 'Connection Closed (Check Network/Key)';
+            errorMsg = 'Connection lost - check network';
+          } else if (event?.code === 1001) {
+            errorMsg = 'Session ended (going away)';
           } else if (reasonStr) {
-            errorMsg = `Disconnected: ${reasonStr.slice(0, 30)}`;
+            errorMsg = `Disconnected: ${reasonStr.slice(0, 40)}`;
           }
 
           this.handleStop(true);

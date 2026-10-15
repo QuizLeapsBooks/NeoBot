@@ -6,6 +6,7 @@
  * 2. Setup handshake (model, voice, science guide personality)
  * 3. Bidirectional streaming (16kHz PCM audio & 1 FPS JPEG camera frames)
  * 4. Audio output parsing & barge-in (interruption) detection
+ * 5. Session resumption handle tracking
  */
 
 import { CONFIG } from './config.js';
@@ -15,6 +16,8 @@ export class GeminiLiveClient {
     this.ws = null;
     this.isConnected = false;
     this.isSetupComplete = false;
+    this._initialResolve = null;   // stored so setup-complete can resolve the connect() Promise
+    this._resumptionHandle = null; // tracks latest session resumption handle
 
     // Callbacks
     this.onReady = options.onReady || (() => {});
@@ -60,7 +63,8 @@ export class GeminiLiveClient {
     if (sessionData.mode === 'ephemeral' && sessionData.token) {
       console.log('[GeminiLiveClient] Connecting directly using Google Ephemeral Token...');
       const endpoint = sessionData.wsEndpoint || 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained';
-      wsUrl = `${endpoint}?access_token=${sessionData.token}`;
+      // CRITICAL FIX: URL-encode the token — auth_tokens/HASH contains '/' which breaks URLs
+      wsUrl = `${endpoint}?access_token=${encodeURIComponent(sessionData.token)}`;
     } else {
       console.log('[GeminiLiveClient] Connecting via Backend WebSocket Relay Proxy...');
       // Convert HTTP(S) URL to WS(S) URL
@@ -75,14 +79,16 @@ export class GeminiLiveClient {
       try {
         this.ws = new WebSocket(wsUrl);
       } catch (err) {
-        return reject(err);
+        return reject(new Error(`WebSocket URL invalid: ${err.message}`));
       }
+
+      // Store resolve so handleIncomingMessage can call it after setupComplete
+      this._initialResolve = resolve;
+      let rejected = false;
 
       this.ws.onopen = () => {
         console.log('🔗 WebSocket Connected to Gemini Live API.');
         this.isConnected = true;
-
-        // Send Initial Setup Message
         this.sendSetupMessage(sessionData);
       };
 
@@ -94,9 +100,8 @@ export class GeminiLiveClient {
           } else {
             textData = event.data;
           }
-
           const message = JSON.parse(textData);
-          this.handleIncomingMessage(message, resolve);
+          this.handleIncomingMessage(message);
         } catch (err) {
           console.warn('[GeminiLiveClient] Error parsing incoming message:', err);
         }
@@ -104,14 +109,26 @@ export class GeminiLiveClient {
 
       this.ws.onerror = (event) => {
         console.error('[GeminiLiveClient] WebSocket error:', event);
-        this.onError(new Error('WebSocket connection error.'));
-        reject(new Error('WebSocket connection error.'));
+        const err = new Error('WebSocket connection error. Check network and API key.');
+        if (!rejected && !this.isSetupComplete) {
+          rejected = true;
+          reject(err);
+        }
+        this.onError(err);
       };
 
       this.ws.onclose = (event) => {
         console.log(`🔌 WebSocket Closed (${event.code}: ${event.reason || 'Normal closure'})`);
         this.isConnected = false;
         this.isSetupComplete = false;
+        // If connection closed before setupComplete was received, reject connect() promise
+        if (!rejected && this._initialResolve) {
+          rejected = true;
+          this._initialResolve = null;
+          reject(new Error(`Connection closed before ready (code ${event.code}: ${event.reason || 'unknown'})`));
+          return; // onClose will be called by the reject path via handleStop
+        }
+        this._initialResolve = null;
         this.onClose(event);
       };
     });
@@ -151,12 +168,15 @@ export class GeminiLiveClient {
   /**
    * Handles incoming server messages
    */
-  handleIncomingMessage(message, initialResolve) {
-    // 1. Setup Complete
+  handleIncomingMessage(message) {
+    // 1. Setup Complete → resolve the connect() Promise and fire onReady
     if (message.setupComplete) {
       console.log('✅ Gemini Live Setup Complete. Ready for real-time interaction.');
       this.isSetupComplete = true;
-      if (initialResolve) initialResolve();
+      if (this._initialResolve) {
+        this._initialResolve();
+        this._initialResolve = null;
+      }
       this.onReady();
       return;
     }
@@ -178,7 +198,7 @@ export class GeminiLiveClient {
           if (part.inlineData && part.inlineData.mimeType?.startsWith('audio/')) {
             this.onAudioChunk(part.inlineData.data);
           }
-          // Optional Text Transcript
+          // Optional Text Transcript (for debugging / display)
           if (part.text) {
             this.onTranscript(part.text);
           }
@@ -186,13 +206,25 @@ export class GeminiLiveClient {
       }
 
       if (turnComplete) {
+        console.log('[GeminiLiveClient] Turn complete.');
         this.onTurnComplete();
       }
     }
 
-    // 3. Go Away Frame (session time limit warning)
+    // 3. Session Resumption Handle — store for potential reconnect
+    if (message.sessionResumptionUpdate) {
+      const { newHandle, resumable } = message.sessionResumptionUpdate;
+      if (resumable && newHandle) {
+        this._resumptionHandle = newHandle;
+      }
+    }
+
+    // 4. Go Away Frame (session time limit warning)
     if (message.goAway) {
-      console.warn('⚠️ Gemini Live sent goAway notice. Session expiring soon.');
+      const timeLeftMs = message.goAway.timeLeft
+        ? parseInt(message.goAway.timeLeft) * 1000
+        : 0;
+      console.warn(`⚠️ Gemini Live goAway notice. Session expiring in ~${Math.round(timeLeftMs / 1000)}s.`);
     }
   }
 

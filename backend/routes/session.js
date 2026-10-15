@@ -13,17 +13,18 @@ sessionRouter.post('/session-token', async (req, res) => {
   // Read API key from environment (must be set in .env or Render env vars)
   const apiKey = process.env.GEMINI_API_KEY;
 
-  // Resolve model — normalise legacy/placeholder names to the current Live API model
-  const rawModel = process.env.GEMINI_MODEL || '';
+  // Resolve model — only remap known invalid placeholder names to current Live API model
+  const rawModel = (process.env.GEMINI_MODEL || '').trim();
+  // Default/fallback: gemini-3.8-live (supports bidiGenerateContent)
   const LIVE_MODEL = 'gemini-3.8-live';
-  const model = (
-    rawModel === '' ||
-    rawModel === 'gemini-2.5-flash' ||
-    rawModel === 'gemini-2.5-flash-native-audio-preview-12-2025' ||
-    rawModel === 'gemini-2.0-flash-live-001' ||
-    rawModel === 'gemini-2.0-flash-exp' ||
-    rawModel === 'gemini-2.0-flash'
-  ) ? LIVE_MODEL : rawModel;
+  const PLACEHOLDER_NAMES = new Set([
+    '',
+    'your_model_here',
+    'gemini-2.0-flash-live-001', // old alias, now deprecated
+    'gemini-2.0-flash-exp',       // non-live model used by mistake
+    'gemini-2.0-flash'            // non-live model used by mistake
+  ]);
+  const model = PLACEHOLDER_NAMES.has(rawModel) ? LIVE_MODEL : rawModel;
 
   const voice = process.env.GEMINI_VOICE || 'Puck';
   const robotName = process.env.ROBOT_NAME || 'NeoBot';

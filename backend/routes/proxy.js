@@ -28,16 +28,18 @@ export function setupWebSocketProxy(server) {
       return;
     }
 
+    const model = (process.env.GEMINI_MODEL || 'gemini-3.8-live').trim();
     const geminiWsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-    
-    console.log('[WS Proxy] Client connected. Connecting to Gemini Live API...');
+
+    console.log(`[WS Proxy] Client connected. Bridging to Gemini Live (model: ${model})...`);
     const geminiWs = new WebSocket(geminiWsUrl);
 
     // Queue messages sent by client before Gemini connection is open
     const clientMessageQueue = [];
+    let cleaned = false; // Guard against double-cleanup race condition
 
     geminiWs.on('open', () => {
-      console.log('[WS Proxy] Connected to Gemini Live API.');
+      console.log('[WS Proxy] Connected to Gemini Live API. Flushing queued messages...');
       while (clientMessageQueue.length > 0 && geminiWs.readyState === WebSocket.OPEN) {
         geminiWs.send(clientMessageQueue.shift());
       }
@@ -59,7 +61,7 @@ export function setupWebSocketProxy(server) {
       }
     });
 
-    // Keepalive ping every 30s to prevent Render idle timeout
+    // Keepalive ping every 25s to prevent idle timeout (Render free tier = 30s)
     const keepAliveInterval = setInterval(() => {
       if (clientWs.readyState === WebSocket.OPEN) {
         clientWs.ping();
@@ -67,9 +69,11 @@ export function setupWebSocketProxy(server) {
       if (geminiWs.readyState === WebSocket.OPEN) {
         geminiWs.ping();
       }
-    }, 30000);
+    }, 25000);
 
     const cleanup = () => {
+      if (cleaned) return; // Prevent double-cleanup
+      cleaned = true;
       clearInterval(keepAliveInterval);
       if (geminiWs.readyState === WebSocket.OPEN || geminiWs.readyState === WebSocket.CONNECTING) {
         geminiWs.close();
