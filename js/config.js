@@ -17,12 +17,14 @@ export const CONFIG = {
         return 'https://neobot-t7c2.onrender.com';
       }
 
-      // If opened on local server (Live Server port 5500, Vite port 5173, etc.),
-      // ensure we target the Node.js backend on port 3000
-      if (window.location.port !== '3000') {
+      // If opened on a known local dev server port (Live Server 5500, Vite 5173, etc.),
+      // redirect to the Node.js backend on port 3000
+      const devPorts = ['5500', '5501', '5173', '4173', '8080', '8000'];
+      if (devPorts.includes(window.location.port)) {
         return `http://${window.location.hostname}:3000`;
       }
 
+      // Otherwise (production/Render, or already on port 3000) — use same origin
       return window.location.origin;
     }
 
