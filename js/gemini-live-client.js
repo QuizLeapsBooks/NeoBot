@@ -138,7 +138,11 @@ export class GeminiLiveClient {
    * Sends the mandatory initial setup payload
    */
   sendSetupMessage(sessionData) {
-    const model = sessionData.model || 'gemini-3.8-live';
+    let rawModel = sessionData.model || '';
+    // bidiGenerateContent requires a Live API model; non-live models like gemini-2.5-flash or gemini-3.8 will fail with code 1008
+    const model = (rawModel && rawModel.includes('live') && rawModel !== 'gemini-2.5-flash')
+      ? rawModel
+      : 'gemini-3.8-live';
     const voice = sessionData.voice || 'Puck';
     const systemInstruction = sessionData.systemInstruction || 'You are NeoBot, a helpful AI science robot.';
 

@@ -13,10 +13,10 @@ sessionRouter.post('/session-token', async (req, res) => {
   // Read API key from environment (must be set in .env or Render env vars)
   const apiKey = process.env.GEMINI_API_KEY;
 
-  // Resolve model — respect configured GEMINI_MODEL or default to gemini-3.8-live
+  // Resolve model — ensure Live API compatibility (bidiGenerateContent requires a live model)
   const rawModel = (process.env.GEMINI_MODEL || '').trim();
   const DEFAULT_LIVE_MODEL = 'gemini-3.8-live';
-  const model = (rawModel && rawModel !== 'your_model_here') ? rawModel : DEFAULT_LIVE_MODEL;
+  const model = (rawModel && rawModel.includes('live') && rawModel !== 'your_model_here') ? rawModel : DEFAULT_LIVE_MODEL;
 
   const voice = process.env.GEMINI_VOICE || 'Puck';
   const robotName = process.env.ROBOT_NAME || 'NeoBot';
