@@ -240,18 +240,17 @@ export class GeminiLiveClient {
 
   /**
    * Streams 16kHz PCM audio chunk to Gemini
+   * Uses the official real-time audio input modality format
    */
   sendAudioChunk(base64Pcm) {
     if (!this.isConnected || !this.isSetupComplete || !this.ws) return;
 
     const payload = {
       realtimeInput: {
-        mediaChunks: [
-          {
-            mimeType: 'audio/pcm;rate=16000',
-            data: base64Pcm
-          }
-        ]
+        audio: {
+          mimeType: 'audio/pcm;rate=16000',
+          data: base64Pcm
+        }
       }
     };
 
@@ -260,18 +259,17 @@ export class GeminiLiveClient {
 
   /**
    * Streams 1 FPS JPEG camera frame to Gemini
+   * Uses the official real-time video input modality format
    */
   sendVideoFrame(base64Jpeg) {
     if (!this.isConnected || !this.isSetupComplete || !this.ws) return;
 
     const payload = {
       realtimeInput: {
-        mediaChunks: [
-          {
-            mimeType: 'image/jpeg',
-            data: base64Jpeg
-          }
-        ]
+        video: {
+          mimeType: 'image/jpeg',
+          data: base64Jpeg
+        }
       }
     };
 
@@ -279,21 +277,23 @@ export class GeminiLiveClient {
   }
 
   /**
-   * Tells Gemini that user has finished speaking their turn.
-   * Prompts Gemini to process the accumulated voice stream and speak its answer.
+   * Optional manual turn-completion signaling.
+   * With server-side VAD, continuous audio streams naturally trigger model response
+   * without injecting empty client turns. For manual end-of-activity signaling,
+   * sends realtimeInput activityEnd if required, rather than an empty clientContent turn.
    */
   sendTurnComplete() {
     if (!this.isConnected || !this.isSetupComplete || !this.ws) return;
-    console.log('[GeminiLiveClient] Signaling clientContent turnComplete: true');
+    console.log('[GeminiLiveClient] Signaling realtimeInput activityEnd (turn completion)');
     const payload = {
-      clientContent: {
-        turnComplete: true
+      realtimeInput: {
+        activityEnd: {}
       }
     };
     try {
       this.ws.send(JSON.stringify(payload));
     } catch (err) {
-      console.warn('[GeminiLiveClient] Error sending turnComplete:', err);
+      console.warn('[GeminiLiveClient] Error sending activityEnd:', err);
     }
   }
 

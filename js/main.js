@@ -29,6 +29,7 @@ class NeoBotApp {
     this.silenceTimer = null;
     this.initialGreetingTriggered = false;
     this._transcriptClearTimer = null;
+    this._thinkingTimeout = null;
 
     this.initDOMElements();
     this.initManagers();
@@ -145,7 +146,8 @@ class NeoBotApp {
         }
       },
       onAudioChunk: (base64Pcm) => {
-        if (this.state === 'thinking') {
+        this._clearThinkingTimer();
+        if (this.state === 'thinking' || this.state === 'ready') {
           this.updateUIState('speaking', 'NeoBot Speaking...');
           this.hideVoiceIndicator();
         }
@@ -157,11 +159,21 @@ class NeoBotApp {
       },
       onTurnComplete: () => {
         console.log('[NeoBot] AI turn complete - listening for next input.');
+        this._clearThinkingTimer();
         this.userHasSpoken = false;
         if (this.doneSpeakingBtn) this.doneSpeakingBtn.classList.add('hidden');
+        this.hideVoiceIndicator();
+        if (this.state === 'thinking' || this.state === 'speaking') {
+          this.updateUIState('ready', 'Online - Listening & Watching');
+        }
       },
       onInterrupted: () => {
+        this._clearThinkingTimer();
         this.audioManager.clearPlaybackQueue();
+        this.hideVoiceIndicator();
+        if (this.state === 'thinking' || this.state === 'speaking') {
+          this.updateUIState('ready', 'Online - Listening & Watching');
+        }
       },
       onError: (err) => {
         console.error('[NeoBot] Gemini Live Error:', err.message);
@@ -290,7 +302,7 @@ class NeoBotApp {
   }
 
   /**
-   * Finalizes user speech turn and sends turnComplete to Gemini
+   * Finalizes user speech turn and notifies Gemini
    */
   finishUserTurn() {
     if (!this.userHasSpoken && this.state !== 'ready') return;
@@ -307,9 +319,28 @@ class NeoBotApp {
 
     this.updateUIState('thinking', 'NeoBot Thinking...');
     this.showVoiceIndicator('NeoBot is thinking...');
+    this._startThinkingTimer();
 
     if (this.geminiClient && this.geminiClient.isConnected) {
       this.geminiClient.sendTurnComplete();
+    }
+  }
+
+  _startThinkingTimer() {
+    this._clearThinkingTimer();
+    this._thinkingTimeout = setTimeout(() => {
+      if (this.state === 'thinking') {
+        console.warn('[NeoBot] Thinking timeout reached without response. Resetting to ready.');
+        this.hideVoiceIndicator();
+        this.updateUIState('ready', 'Online - Listening & Watching');
+      }
+    }, 12000);
+  }
+
+  _clearThinkingTimer() {
+    if (this._thinkingTimeout) {
+      clearTimeout(this._thinkingTimeout);
+      this._thinkingTimeout = null;
     }
   }
 
@@ -420,6 +451,7 @@ class NeoBotApp {
    * Lifecycle Stop & Resource Cleanup
    */
   handleStop(preserveError = false) {
+    this._clearThinkingTimer();
     this.userHasSpoken = false;
     this.initialGreetingTriggered = false;
 

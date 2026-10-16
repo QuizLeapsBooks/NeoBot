@@ -84,7 +84,8 @@ async function runTests() {
           'Sec-WebSocket-Version': '13'
         }
       });
-      req.on('upgrade', (res) => {
+      req.on('upgrade', (res, socket) => {
+        socket.destroy();
         resolve({ upgraded: true, status: res.statusCode });
       });
       req.on('response', (res) => {
@@ -103,10 +104,13 @@ async function runTests() {
 
     if (passed === total) {
       console.log('🎉 All backend tests passed successfully!');
+      process.exit(0);
+    } else {
+      process.exit(1);
     }
   } catch (err) {
     console.error('Test execution error:', err);
-    process.exitCode = 1;
+    process.exit(1);
   }
 }
 

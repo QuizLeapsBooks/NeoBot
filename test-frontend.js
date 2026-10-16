@@ -148,29 +148,29 @@ async function runFrontendTests() {
 
   client.sendAudioChunk('input_pcm_data');
   assert(
-    sentPayload?.realtimeInput?.mediaChunks?.[0]?.mimeType === 'audio/pcm;rate=16000',
+    sentPayload?.realtimeInput?.audio?.mimeType === 'audio/pcm;rate=16000',
     'sendAudioChunk formats realtimeInput with audio/pcm;rate=16000'
   );
   assert(
-    sentPayload?.realtimeInput?.mediaChunks?.[0]?.data === 'input_pcm_data',
+    sentPayload?.realtimeInput?.audio?.data === 'input_pcm_data',
     'sendAudioChunk preserves audio payload bytes'
   );
 
   client.sendVideoFrame('input_jpeg_data');
   assert(
-    sentPayload?.realtimeInput?.mediaChunks?.[0]?.mimeType === 'image/jpeg',
+    sentPayload?.realtimeInput?.video?.mimeType === 'image/jpeg',
     'sendVideoFrame formats realtimeInput with image/jpeg'
   );
   assert(
-    sentPayload?.realtimeInput?.mediaChunks?.[0]?.data === 'input_jpeg_data',
+    sentPayload?.realtimeInput?.video?.data === 'input_jpeg_data',
     'sendVideoFrame preserves JPEG payload bytes'
   );
 
   // Test sendTurnComplete
   client.sendTurnComplete();
   assert(
-    sentPayload?.clientContent?.turnComplete === true,
-    'sendTurnComplete sends clientContent.turnComplete: true'
+    Boolean(sentPayload?.realtimeInput?.activityEnd),
+    'sendTurnComplete sends realtimeInput.activityEnd without invalid clientContent'
   );
 
   // Test sendInitialGreeting
