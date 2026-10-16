@@ -312,7 +312,7 @@ export class GeminiLiveClient {
         turns: [
           {
             role: 'user',
-            parts: [{ text: 'A visitor has just walked up to you at the school science exhibition! Speak aloud and greet them warmly as NeoBot in 1 to 2 lively sentences.' }]
+            parts: [{ text: 'A visitor has just walked up to the science exhibition stall. Greet them warmly and naturally as per your personality. Keep it to 1 to 2 sentences. Do not start with "Hello human".' }]
           }
         ],
         turnComplete: true
